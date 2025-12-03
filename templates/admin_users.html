@@ -23,7 +23,7 @@
 <h3>Bestaande gebruikers</h3>
 
 {% if users %}
-<table>
+<table border="1" cellpadding="5">
     <tr>
         <th>Naam</th>
         <th>Rol</th>
@@ -33,31 +33,29 @@
 
     {% for u in users %}
     <tr>
-        <td>{{ u.username }}</td>
+        <td>{{ u['username'] }}</td>
         <td>
-            {% if u.is_admin %}Admin{% elif u.is_staff %}Staff{% else %}Gebruiker{% endif %}
+            {% if u['is_admin'] %}Admin{% elif u['is_staff'] %}Staff{% else %}Gebruiker{% endif %}
         </td>
-        <td>{{ "Actief" if u.active else "Inactief" }}</td>
-
+        <td>{{ "Actief" if u['active'] else "Inactief" }}</td>
         <td>
-            <a href="{{ url_for('admin_reset_password', user_id=u.id) }}">Wachtwoord</a>
+            <a href="{{ url_for('admin_reset_password', user_id=u['id']) }}">Wachtwoord</a>
 
-            {% if not u.is_admin %}
-            <form method="post" action="{{ url_for('admin_toggle_user', user_id=u.id) }}" style="display:inline;">
+            {% if not u['is_admin'] %}
+            <form method="post" action="{{ url_for('admin_toggle_user', user_id=u['id']) }}" style="display:inline;">
                 <button type="submit">
-                    {{ "Deactiveren" if u.active else "Activeren" }}
+                    {{ "Deactiveren" if u['active'] else "Activeren" }}
                 </button>
             </form>
 
-            <form method="post" action="{{ url_for('admin_set_role', user_id=u.id) }}" style="display:inline;">
+            <form method="post" action="{{ url_for('admin_set_role', user_id=u['id']) }}" style="display:inline;">
                 <select name="new_role">
-                    <option value="user">Gebruiker</option>
-                    <option value="staff">Staff</option>
+                    <option value="user" {% if not u['is_staff'] %}selected{% endif %}>Gebruiker</option>
+                    <option value="staff" {% if u['is_staff'] %}selected{% endif %}>Staff</option>
                 </select>
                 <button type="submit">Wijzigen</button>
             </form>
             {% endif %}
-
         </td>
     </tr>
     {% endfor %}
