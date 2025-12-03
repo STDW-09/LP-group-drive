@@ -74,6 +74,9 @@ def storage_used(username):
     return sum(f.stat().st_size for f in folder.iterdir() if f.is_file())
 
 # ---------------- LOGIN / LOGOUT --------------------
+@app.route("/")
+def home():
+    return redirect(url_for("login"))
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
