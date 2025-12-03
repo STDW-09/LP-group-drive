@@ -1,3 +1,9 @@
+SECRET_KEY = os.environ.get('SECRET_KEY', 'fallback_key')
+SUPABASE_URL = os.environ.get('SUPABASE_URL')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+
+
+
 from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, send_from_directory
 import sqlite3
 import os
