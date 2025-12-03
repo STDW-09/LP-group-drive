@@ -1,31 +1,23 @@
 import os
+from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory
 from supabase import create_client
-
-SECRET_KEY = os.environ.get('SECRET_KEY')
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
-
-app = Flask(__name__)
-app.secret_key = SECRET_KEY
-
-# Supabase client
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
-
-from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, send_from_directory
-import sqlite3
-import os
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from pathlib import Path
+import sqlite3
 
+# --- Flask setup ---
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "gebruik_een_veilige_sleutel")
 
+# --- Supabase client ---
+SUPABASE_URL = os.environ.get('SUPABASE_URL')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# --- Folders & storage ---
 UPLOAD_FOLDER = Path("uploads")
 UPLOAD_FOLDER.mkdir(exist_ok=True)
-
 DB_PATH = "users.db"
 MAX_USER_STORAGE = 100 * 1024 * 1024   # 100 MB
 
@@ -39,7 +31,6 @@ def db():
 def init_db():
     conn = db()
     c = conn.cursor()
-
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,7 +41,6 @@ def init_db():
             active INTEGER DEFAULT 1
         )
     """)
-
     # admin toevoegen indien niet aanwezig
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
@@ -58,7 +48,6 @@ def init_db():
             "INSERT INTO users (username, password_hash, is_admin, is_staff, active) VALUES (?, ?, 1, 0, 1)",
             ("admin", generate_password_hash("adminLP"))
         )
-
     conn.commit()
     conn.close()
 
@@ -84,7 +73,7 @@ def storage_used(username):
     folder = user_folder(username)
     return sum(f.stat().st_size for f in folder.iterdir() if f.is_file())
 
-# ---------------- LOGIN --------------------
+# ---------------- LOGIN / LOGOUT --------------------
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -131,7 +120,6 @@ def dashboard():
 
     if is_admin():
         return redirect(url_for("admin_panel"))
-
     if is_staff():
         return redirect(url_for("staff_panel"))
 
@@ -158,18 +146,23 @@ def upload():
 
     filename = secure_filename(file.filename)
 
-    if storage_used(username) + file.seek(0, 2) > MAX_USER_STORAGE:
+    # correcte groottecheck
+    file.seek(0, 2)
+    file_size = file.tell()
+    file.seek(0)
+    if storage_used(username) + file_size > MAX_USER_STORAGE:
         flash("Niet genoeg opslagruimte", "danger")
         return redirect(url_for("dashboard"))
 
-    file.seek(0)
     file.save(user_folder(username) / filename)
-
     flash("Bestand geüpload", "success")
     return redirect(url_for("dashboard"))
 
 @app.route("/delete/<filename>", methods=["POST"])
 def delete_file(filename):
+    if not is_logged():
+        return redirect(url_for("login"))
+
     username = session["username"]
     path = user_folder(username) / secure_filename(filename)
 
@@ -181,6 +174,9 @@ def delete_file(filename):
 
 @app.route("/download/<filename>")
 def download(filename):
+    if not is_logged():
+        return redirect(url_for("login"))
+
     username = session["username"]
     return send_from_directory(user_folder(username), filename, as_attachment=True)
 
@@ -214,10 +210,11 @@ def staff_create_user():
                   (username, generate_password_hash(pw)))
         conn.commit()
         flash("Gebruiker aangemaakt", "success")
-    except:
+    except sqlite3.IntegrityError:
         flash("Gebruiker bestaat al", "danger")
+    finally:
+        conn.close()
 
-    conn.close()
     return redirect(url_for("staff_panel"))
 
 # ---------------- ADMIN --------------------
@@ -259,10 +256,11 @@ def admin_create_user():
                   (name, generate_password_hash(pw), is_staff_value))
         conn.commit()
         flash("Gebruiker/staff aangemaakt", "success")
-    except:
+    except sqlite3.IntegrityError:
         flash("Gebruiker bestaat al", "danger")
+    finally:
+        conn.close()
 
-    conn.close()
     return redirect(url_for("admin_users"))
 
 @app.route("/admin/reset/<int:user_id>", methods=["GET", "POST"])
@@ -272,14 +270,12 @@ def admin_reset_password(user_id):
 
     if request.method == "POST":
         pw = request.form["new_password"]
-
         conn = db()
         c = conn.cursor()
         c.execute("UPDATE users SET password_hash=? WHERE id=?",
                   (generate_password_hash(pw), user_id))
         conn.commit()
         conn.close()
-
         flash("Wachtwoord veranderd", "success")
         return redirect(url_for("admin_users"))
 
@@ -294,9 +290,7 @@ def admin_toggle_user(user_id):
     c = conn.cursor()
     c.execute("SELECT active FROM users WHERE id=?", (user_id,))
     current = c.fetchone()["active"]
-
     new_state = 0 if current else 1
-
     c.execute("UPDATE users SET active=? WHERE id=?", (new_state, user_id))
     conn.commit()
     conn.close()
@@ -304,6 +298,7 @@ def admin_toggle_user(user_id):
     flash("Status aangepast", "success")
     return redirect(url_for("admin_users"))
 
+# ---------------- RUN --------------------
 
 if __name__ == "__main__":
     app.run(debug=True)
