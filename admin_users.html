@@ -1,0 +1,69 @@
+{% extends "layout.html" %}
+{% block content %}
+<h2>Gebruikersbeheer (Admin)</h2>
+
+<h3>Nieuwe gebruiker of staff</h3>
+
+<form method="post" action="{{ url_for('admin_create_user') }}" class="form-box">
+    <label>Gebruikersnaam</label>
+    <input type="text" name="new_username" required>
+
+    <label>Wachtwoord</label>
+    <input type="text" name="new_password" required>
+
+    <label>Rol</label>
+    <select name="role">
+        <option value="user">Gebruiker</option>
+        <option value="staff">Staff</option>
+    </select>
+
+    <button type="submit">Aanmaken</button>
+</form>
+
+<h3>Bestaande gebruikers</h3>
+
+{% if users %}
+<table>
+    <tr>
+        <th>Naam</th>
+        <th>Rol</th>
+        <th>Status</th>
+        <th>Acties</th>
+    </tr>
+
+    {% for u in users %}
+    <tr>
+        <td>{{ u.username }}</td>
+        <td>
+            {% if u.is_admin %}Admin{% elif u.is_staff %}Staff{% else %}Gebruiker{% endif %}
+        </td>
+        <td>{{ "Actief" if u.active else "Inactief" }}</td>
+
+        <td>
+            <a href="{{ url_for('admin_reset_password', user_id=u.id) }}">Wachtwoord</a>
+
+            {% if not u.is_admin %}
+            <form method="post" action="{{ url_for('admin_toggle_user', user_id=u.id) }}" style="display:inline;">
+                <button type="submit">
+                    {{ "Deactiveren" if u.active else "Activeren" }}
+                </button>
+            </form>
+
+            <form method="post" action="{{ url_for('admin_set_role', user_id=u.id) }}" style="display:inline;">
+                <select name="new_role">
+                    <option value="user">Gebruiker</option>
+                    <option value="staff">Staff</option>
+                </select>
+                <button type="submit">Wijzigen</button>
+            </form>
+            {% endif %}
+
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% else %}
+<p>Geen gebruikers gevonden.</p>
+{% endif %}
+{% endblock %}
