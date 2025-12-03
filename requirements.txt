@@ -1,3 +1,4 @@
-Flask
-werkzeug
-supabase
+Flask==2.3.3
+Werkzeug==2.3.6
+supabase-py==1.0.0
+python-dotenv==1.0.0
