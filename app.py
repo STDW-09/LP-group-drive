@@ -1,23 +1,20 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory
+import sqlite3
+from flask import Flask, render_template, request, redirect, url_for, session, flash
 from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from pathlib import Path
-import sqlite3
 
 # --- Flask setup ---
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "gebruik_een_veilige_sleutel")
 
-# --- Supabase client (nog niet gebruikt, maar klaar voor integratie) ---
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+# --- Supabase client ---
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- Folders & storage ---
-UPLOAD_FOLDER = Path("uploads")
-UPLOAD_FOLDER.mkdir(exist_ok=True)
+BUCKET_NAME = "userfiles"   # maak deze bucket aan in Supabase
 DB_PATH = "users.db"
 MAX_USER_STORAGE = 100 * 1024 * 1024   # 100 MB
 
@@ -56,11 +53,6 @@ init_db()
 
 # ---------------- HELPERS --------------------
 
-def user_folder(username):
-    folder = UPLOAD_FOLDER / username
-    folder.mkdir(exist_ok=True)
-    return folder
-
 def is_logged():
     return "username" in session
 
@@ -71,10 +63,11 @@ def is_staff():
     return session.get("is_staff", False)
 
 def storage_used(username):
-    folder = user_folder(username)
-    return sum(f.stat().st_size for f in folder.iterdir() if f.is_file())
+    files = supabase.storage.from_(BUCKET_NAME).list(username)
+    return sum(f.get("metadata", {}).get("size", 0) for f in files)
 
 # ---------------- LOGIN / LOGOUT --------------------
+
 @app.route("/")
 def home():
     return redirect(url_for("login"))
@@ -128,12 +121,12 @@ def dashboard():
         return redirect(url_for("staff_panel"))
 
     username = session["username"]
-    folder = user_folder(username)
-    files = [{"name": f.name, "size": f.stat().st_size} for f in folder.iterdir() if f.is_file()]
+    files = supabase.storage.from_(BUCKET_NAME).list(username)
+    file_list = [{"name": f["name"], "size": f.get("metadata", {}).get("size", 0)} for f in files]
 
     return render_template("dashboard.html",
-                           files=files,
-                           used=storage_used(username),
+                           files=file_list,
+                           used=sum(f["size"] for f in file_list),
                            limit=MAX_USER_STORAGE)
 
 @app.route("/upload", methods=["POST"])
@@ -150,7 +143,7 @@ def upload():
 
     filename = secure_filename(file.filename)
 
-    # correcte groottecheck
+    # groottecheck
     file.seek(0, 2)
     file_size = file.tell()
     file.seek(0)
@@ -158,8 +151,12 @@ def upload():
         flash("Niet genoeg opslagruimte", "danger")
         return redirect(url_for("dashboard"))
 
-    file.save(user_folder(username) / filename)
-    flash("Bestand geüpload", "success")
+    res = supabase.storage.from_(BUCKET_NAME).upload(f"{username}/{filename}", file)
+    if res:
+        flash("Bestand geüpload naar Supabase", "success")
+    else:
+        flash("Upload mislukt", "danger")
+
     return redirect(url_for("dashboard"))
 
 @app.route("/delete/<filename>", methods=["POST"])
@@ -168,11 +165,8 @@ def delete_file(filename):
         return redirect(url_for("login"))
 
     username = session["username"]
-    path = user_folder(username) / secure_filename(filename)
-
-    if path.exists():
-        path.unlink()
-        flash("Bestand verwijderd", "success")
+    supabase.storage.from_(BUCKET_NAME).remove([f"{username}/{secure_filename(filename)}"])
+    flash("Bestand verwijderd", "success")
 
     return redirect(url_for("dashboard"))
 
@@ -182,7 +176,16 @@ def download(filename):
         return redirect(url_for("login"))
 
     username = session["username"]
-    return send_from_directory(user_folder(username), filename, as_attachment=True)
+    res = supabase.storage.from_(BUCKET_NAME).download(f"{username}/{secure_filename(filename)}")
+
+    if res:
+        return (res, 200, {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": f"attachment; filename={filename}"
+        })
+    else:
+        flash("Download mislukt", "danger")
+        return redirect(url_for("dashboard"))
 
 # ---------------- STAFF --------------------
 
@@ -294,11 +297,4 @@ def admin_toggle_user(user_id):
     c = conn.cursor()
     c.execute("SELECT active FROM users WHERE id=?", (user_id,))
     current = c.fetchone()["active"]
-    new_state = 0 if current else 1
-    c.execute("UPDATE users SET active=? WHERE id=?", (new_state, user_id))
-    conn.commit()
-    conn.close()
-
-    flash("Status aangepast", "success")
-return redirect(url_for("admin_users"))
-
+    new_state = 0 if current else 
