@@ -300,4 +300,5 @@ def admin_toggle_user(user_id):
     conn.close()
 
     flash("Status aangepast", "success")
-    return redirect(url_for("admin_users
+return redirect(url_for("admin_users"))
+
