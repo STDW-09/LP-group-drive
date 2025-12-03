@@ -1,40 +1,26 @@
 {% extends "layout.html" %}
+{% block title %}Staff Panel{% endblock %}
 {% block content %}
-<h2>Staffpaneel</h2>
+<h2>Staff Panel</h2>
 
-<h3>Nieuwe gebruiker aanmaken</h3>
-<form method="post" action="{{ url_for('staff_create_user') }}" class="form-box">
-    <label>Gebruikersnaam</label>
-    <input type="text" name="new_username" required minlength="3">
-
-    <label>Wachtwoord</label>
-    <input type="text" name="new_password" required minlength="4">
-
-    <button type="submit">Aanmaken</button>
+<form method="post" action="{{ url_for('staff_create_user') }}" class="mb-3">
+  <div class="row g-2">
+    <div class="col"><input type="text" name="new_username" class="form-control" placeholder="Gebruikersnaam" required></div>
+    <div class="col"><input type="password" name="new_password" class="form-control" placeholder="Wachtwoord" required></div>
+    <div class="col"><button type="submit" class="btn btn-success">Maak aan</button></div>
+  </div>
 </form>
 
-<h3>Gebruikerslijst</h3>
-
-{% if users %}
-<table>
+<table class="table table-bordered">
+  <thead><tr><th>ID</th><th>Naam</th><th>Actief</th></tr></thead>
+  <tbody>
+    {% for user in users %}
     <tr>
-        <th>Naam</th>
-        <th>Status</th>
-        <th>Acties</th>
-    </tr>
-
-    {% for u in users %}
-    <tr>
-        <td>{{ u.username }}</td>
-        <td>{{ "Actief" if u.active else "Inactief" }}</td>
-        <td>
-            <a href="{{ url_for('staff_reset_password', user_id=u.id) }}">Nieuw wachtwoord</a>
-        </td>
+      <td>{{ user.id }}</td>
+      <td>{{ user.username }}</td>
+      <td>{{ user.active }}</td>
     </tr>
     {% endfor %}
+  </tbody>
 </table>
-{% else %}
-<p>Geen gebruikers gevonden.</p>
-{% endif %}
-
 {% endblock %}
