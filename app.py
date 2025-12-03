@@ -10,7 +10,7 @@ import sqlite3
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "gebruik_een_veilige_sleutel")
 
-# --- Supabase client ---
+# --- Supabase client (nog niet gebruikt, maar klaar voor integratie) ---
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -44,9 +44,10 @@ def init_db():
     # admin toevoegen indien niet aanwezig
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
+        admin_pw = os.environ.get("ADMIN_PASSWORD", "admin")
         c.execute(
             "INSERT INTO users (username, password_hash, is_admin, is_staff, active) VALUES (?, ?, 1, 0, 1)",
-            ("admin", generate_password_hash("adminLP"))
+            ("admin", generate_password_hash(admin_pw))
         )
     conn.commit()
     conn.close()
@@ -299,9 +300,4 @@ def admin_toggle_user(user_id):
     conn.close()
 
     flash("Status aangepast", "success")
-    return redirect(url_for("admin_users"))
-
-# ---------------- RUN --------------------
-
-if __name__ == "__main__":
-    app.run(debug=True)
+    return redirect(url_for("admin_users
