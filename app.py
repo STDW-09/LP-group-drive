@@ -1,6 +1,15 @@
-SECRET_KEY = os.environ.get('SECRET_KEY', 'fallback_key')
+import os
+from supabase import create_client
+
+SECRET_KEY = os.environ.get('SECRET_KEY')
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+
+app = Flask(__name__)
+app.secret_key = SECRET_KEY
+
+# Supabase client
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 
