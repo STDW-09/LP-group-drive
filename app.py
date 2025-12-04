@@ -88,8 +88,9 @@ def dashboard():
     storage_files = supabase.storage.from_(BUCKET_NAME).list(path=username)
     storage_list = [{"name": f["name"], "size": f.get("metadata", {}).get("size", 0)} for f in storage_files]
 
-    # Metadata uit tabel
-    db_files = supabase.table("files").select("*").eq("username", username).execute().data
+    # Metadata uit tabel (voorkom NoneType error)
+    res = supabase.table("files").select("*").eq("username", username).execute()
+    db_files = res.data or []
 
     return render_template("dashboard.html",
                            files=storage_list,
@@ -174,7 +175,7 @@ def staff_panel():
         return render_template("not_allowed.html")
 
     res = supabase.table("users").select("*").neq("is_admin", True).execute()
-    users = res.data
+    users = res.data or []
     return render_template("staff_panel.html", users=users)
 
 @app.route("/staff/create", methods=["POST"])
@@ -210,7 +211,7 @@ def admin_users():
     if not is_admin():
         return render_template("not_allowed.html")
     res = supabase.table("users").select("*").execute()
-    users = res.data
+    users = res.data or []
     return render_template("admin_users.html", users=users)
 
 @app.route("/admin/create", methods=["POST"])
@@ -238,6 +239,7 @@ def admin_create_user():
 
 @app.route("/admin/reset/<int:user_id>", methods=["GET", "POST"])
 def admin_reset_password(user_id):
+    # Zowel admin als staff mogen dit
     if not (is_admin() or is_staff()):
         return render_template("not_allowed.html")
 
@@ -262,5 +264,4 @@ def admin_toggle_user(user_id):
         return redirect(url_for("admin_users"))
 
     new_state = not user.get("active", True)
-    supabase.table("users").update({"active": new_state}).eq("id", user_id).execute()
-    flash
+    supabase.table("users").update({"active": new_state}).eq("id", user_id
