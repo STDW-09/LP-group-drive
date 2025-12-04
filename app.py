@@ -1,5 +1,4 @@
 import os
-import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -14,50 +13,10 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-BUCKET_NAME = "userfiles"
-DB_PATH = "users.db"
+BUCKET_NAME = "userfiles"   # maak deze bucket aan in Supabase
 MAX_USER_STORAGE = 100 * 1024 * 1024   # 100 MB
 
-
-# ---------------- DATABASE --------------------
-
-def db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_db():
-    conn = db()
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            is_admin INTEGER DEFAULT 0,
-            is_staff INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 1
-        )
-    """)
-
-    # admin toevoegen indien niet aanwezig
-    c.execute("SELECT * FROM users WHERE username = 'admin'")
-    if not c.fetchone():
-        admin_pw = os.environ.get("ADMIN_PASSWORD", "admin")
-        c.execute(
-            "INSERT INTO users (username, password_hash, is_admin, is_staff, active) 
-             VALUES (?, ?, 1, 0, 1)",
-            ("admin", generate_password_hash(admin_pw))
-        )
-
-    conn.commit()
-    conn.close()
-
-init_db()
-
-
 # ---------------- HELPERS --------------------
-
 def is_logged():
     return "username" in session
 
@@ -71,9 +30,15 @@ def storage_used(username):
     files = supabase.storage.from_(BUCKET_NAME).list(path=username)
     return sum(f.get("metadata", {}).get("size", 0) for f in files)
 
+def get_user(user_id):
+    res = supabase.table("users").select("*").eq("id", user_id).single().execute()
+    return res.data
+
+def get_user_by_username(username):
+    res = supabase.table("users").select("*").eq("username", username).single().execute()
+    return res.data
 
 # ---------------- LOGIN / LOGOUT --------------------
-
 @app.route("/")
 def home():
     return redirect(url_for("login"))
@@ -84,13 +49,8 @@ def login():
         name = request.form.get("username").strip()
         pw = request.form.get("password")
 
-        conn = db()
-        c = conn.cursor()
-        c.execute("SELECT * FROM users WHERE username=? AND active=1", (name,))
-        user = c.fetchone()
-        conn.close()
-
-        if user and check_password_hash(user["password_hash"], pw):
+        user = get_user_by_username(name)
+        if user and user["active"] and check_password_hash(user["password_hash"], pw):
             session["username"] = user["username"]
             session["user_id"] = user["id"]
             session["is_admin"] = bool(user["is_admin"])
@@ -114,9 +74,7 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
-
 # ---------------- USER DASHBOARD --------------------
-
 @app.route("/dashboard")
 def dashboard():
     if not is_logged():
@@ -136,7 +94,6 @@ def dashboard():
                            used=sum(f["size"] for f in file_list),
                            limit=MAX_USER_STORAGE)
 
-
 @app.route("/upload", methods=["POST"])
 def upload():
     if not is_logged():
@@ -155,7 +112,6 @@ def upload():
     file.seek(0, 2)
     file_size = file.tell()
     file.seek(0)
-
     if storage_used(username) + file_size > MAX_USER_STORAGE:
         flash("Niet genoeg opslagruimte", "danger")
         return redirect(url_for("dashboard"))
@@ -168,7 +124,6 @@ def upload():
 
     return redirect(url_for("dashboard"))
 
-
 @app.route("/delete/<filename>", methods=["POST"])
 def delete_file(filename):
     if not is_logged():
@@ -180,7 +135,6 @@ def delete_file(filename):
 
     return redirect(url_for("dashboard"))
 
-
 @app.route("/download/<filename>")
 def download(filename):
     if not is_logged():
@@ -189,35 +143,24 @@ def download(filename):
     username = session["username"]
     res = supabase.storage.from_(BUCKET_NAME).download(f"{username}/{secure_filename(filename)}")
 
-    if not res:
+    if res:
+        return (res, 200, {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": f"attachment; filename={filename}"
+        })
+    else:
         flash("Download mislukt", "danger")
         return redirect(url_for("dashboard"))
 
-    return (
-        res,
-        200,
-        {
-            "Content-Type": "application/octet-stream",
-            "Content-Disposition": f"attachment; filename={filename}",
-        },
-    )
-
-
 # ---------------- STAFF --------------------
-
 @app.route("/staff")
 def staff_panel():
     if not is_staff() and not is_admin():
         return render_template("not_allowed.html")
 
-    conn = db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE is_admin=0")
-    users = c.fetchall()
-    conn.close()
-
+    res = supabase.table("users").select("*").neq("is_admin", True).execute()
+    users = res.data
     return render_template("staff_panel.html", users=users)
-
 
 @app.route("/staff/create", methods=["POST"])
 def staff_create_user():
@@ -227,43 +170,33 @@ def staff_create_user():
     username = request.form["new_username"]
     pw = request.form["new_password"]
 
-    conn = db()
-    c = conn.cursor()
     try:
-        c.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)",
-                  (username, generate_password_hash(pw)))
-        conn.commit()
+        supabase.table("users").insert([{
+            "username": username,
+            "password_hash": generate_password_hash(pw),
+            "is_staff": True
+        }]).execute()
         flash("Gebruiker aangemaakt", "success")
-    except sqlite3.IntegrityError:
+    except:
         flash("Gebruiker bestaat al", "danger")
-    finally:
-        conn.close()
 
     return redirect(url_for("staff_panel"))
 
-
 # ---------------- ADMIN --------------------
-
 @app.route("/admin")
 def admin_panel():
     if not is_admin():
         return render_template("not_allowed.html")
     return render_template("admin_panel.html")
 
-
 @app.route("/admin/users")
 def admin_users():
     if not is_admin():
         return render_template("not_allowed.html")
 
-    conn = db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM users")
-    users = c.fetchall()
-    conn.close()
-
+    res = supabase.table("users").select("*").execute()
+    users = res.data
     return render_template("admin_users.html", users=users)
-
 
 @app.route("/admin/create", methods=["POST"])
 def admin_create_user():
@@ -274,24 +207,19 @@ def admin_create_user():
     pw = request.form["new_password"]
     role = request.form["role"]
 
-    is_staff_value = 1 if role == "staff" else 0
+    is_staff_value = True if role == "staff" else False
 
-    conn = db()
-    c = conn.cursor()
     try:
-        c.execute(
-            "INSERT INTO users (username, password_hash, is_staff) VALUES (?, ?, ?)",
-            (name, generate_password_hash(pw), is_staff_value)
-        )
-        conn.commit()
+        supabase.table("users").insert([{
+            "username": name,
+            "password_hash": generate_password_hash(pw),
+            "is_staff": is_staff_value
+        }]).execute()
         flash("Gebruiker/staff aangemaakt", "success")
-    except sqlite3.IntegrityError:
+    except:
         flash("Gebruiker bestaat al", "danger")
-    finally:
-        conn.close()
 
     return redirect(url_for("admin_users"))
-
 
 @app.route("/admin/reset/<int:user_id>", methods=["GET", "POST"])
 def admin_reset_password(user_id):
@@ -300,32 +228,29 @@ def admin_reset_password(user_id):
 
     if request.method == "POST":
         pw = request.form["new_password"]
-        conn = db()
-        c = conn.cursor()
-        c.execute("UPDATE users SET password_hash=? WHERE id=?",
-                  (generate_password_hash(pw), user_id))
-        conn.commit()
-        conn.close()
+        supabase.table("users").update({
+            "password_hash": generate_password_hash(pw)
+        }).eq("id", user_id).execute()
         flash("Wachtwoord veranderd", "success")
         return redirect(url_for("admin_users"))
 
     return render_template("reset_password.html")
-
 
 @app.route("/admin/toggle/<int:user_id>", methods=["POST"])
 def admin_toggle_user(user_id):
     if not is_admin():
         return render_template("not_allowed.html")
 
-    conn = db()
-    c = conn.cursor()
-    c.execute("SELECT active FROM users WHERE id=?", (user_id,))
-    current = c.fetchone()["active"]
+    user = get_user(user_id)
+    if not user:
+        flash("Gebruiker niet gevonden", "danger")
+        return redirect(url_for("admin_users"))
 
-    new_state = 0 if current else 1
-
-    c.execute("UPDATE users SET active=? WHERE id=?", (new_state, user_id))
-    conn.commit()
-    conn.close()
-
+    new_state = not user["active"]
+    supabase.table("users").update({"active": new_state}).eq("id", user_id).execute()
+    flash("Status aangepast", "success")
     return redirect(url_for("admin_users"))
+
+# ------------------- RUN -------------------
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
