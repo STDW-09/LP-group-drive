@@ -1,40 +1,42 @@
 {% extends "layout.html" %}
-{% block title %}Gebruikersbeheer{% endblock %}
+{% block title %}Admin: Gebruikersbeheer{% endblock %}
+
 {% block content %}
-<h2>Alle gebruikers</h2>
+<h2>Admin: Gebruikersbeheer</h2>
 
-<form method="post" action="{{ url_for('admin_create_user') }}" class="mb-3">
-  <div class="row g-2">
-    <div class="col"><input type="text" name="new_username" class="form-control" placeholder="Gebruikersnaam" required></div>
-    <div class="col"><input type="password" name="new_password" class="form-control" placeholder="Wachtwoord" required></div>
-    <div class="col">
-      <select name="role" class="form-select">
-        <option value="user">User</option>
-        <option value="staff">Staff</option>
-      </select>
-    </div>
-    <div class="col"><button type="submit" class="btn btn-success">Maak aan</button></div>
-  </div>
-</form>
-
-<table class="table table-bordered">
-  <thead><tr><th>ID</th><th>Naam</th><th>Admin</th><th>Staff</th><th>Actief</th><th>Acties</th></tr></thead>
-  <tbody>
-    {% for user in users %}
+{% if users and users|length > 0 %}
+<table class="table table-striped">
+  <thead>
     <tr>
-      <td>{{ user.id }}</td>
-      <td>{{ user.username }}</td>
-      <td>{{ user.is_admin }}</td>
-      <td>{{ user.is_staff }}</td>
-      <td>{{ user.active }}</td>
+      <th>ID</th>
+      <th>Gebruikersnaam</th>
+      <th>Actief</th>
+      <th>Rol</th>
+      <th>Acties</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.id }}</td>
+      <td>{{ u.username or 'Onbekend' }}</td>
+      <td>{{ 'Ja' if u.active else 'Nee' }}</td>
       <td>
-        <a href="{{ url_for('admin_reset_password', user_id=user.id) }}" class="btn btn-sm btn-warning">Reset PW</a>
-        <form method="post" action="{{ url_for('admin_toggle_user', user_id=user.id) }}" style="display:inline;">
-          <button type="submit" class="btn btn-sm btn-secondary">Toggle</button>
+        {% if u.is_admin %}Admin{% elif u.is_staff %}Staff{% else %}User{% endif %}
+      </td>
+      <td>
+        <a href="{{ url_for('reset_password', user_id=u.id) }}" class="btn btn-sm btn-warning">Reset wachtwoord</a>
+        <form method="post" action="{{ url_for('admin_toggle_user', user_id=u.id) }}" style="display:inline;">
+          <button type="submit" class="btn btn-sm btn-secondary">
+            {{ 'Deactiveer' if u.active else 'Activeer' }}
+          </button>
         </form>
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p>Geen gebruikers gevonden.</p>
+{% endif %}
 {% endblock %}
