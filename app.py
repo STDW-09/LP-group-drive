@@ -82,7 +82,7 @@ def dashboard():
 
     user_id = session["user_id"]
 
-    # Bestanden uit storage
+    # Bestanden uit storage bucket
     storage_files = supabase.storage.from_(BUCKET_NAME).list(path=str(user_id))
     storage_list = [{"name": f["name"], "size": f.get("metadata", {}).get("size", 0)} for f in storage_files]
 
@@ -117,15 +117,15 @@ def upload():
         flash("Niet genoeg opslagruimte", "danger")
         return redirect(url_for("dashboard"))
 
-    # Upload als bytes
+    # Upload bestand naar Supabase Storage
     supabase.storage.from_(BUCKET_NAME).upload(f"{user_id}/{filename}", file.read())
 
-    # Metadata opslaan
+    # Metadata opslaan in files tabel
     supabase.table("files").insert([{
         "user_id": user_id,
         "filename": filename,
         "size": file_size,
-        "created_at": datetime.utcnow().isoformat()
+        "uploaded_at": datetime.utcnow().isoformat()
     }]).execute()
 
     flash("Bestand geüpload", "success")
