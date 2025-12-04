@@ -1,26 +1,52 @@
 {% extends "layout.html" %}
 {% block title %}Staff Panel{% endblock %}
+
 {% block content %}
 <h2>Staff Panel</h2>
+<p>Hier kan je gebruikers beheren en wachtwoorden resetten.</p>
 
+<!-- Formulier om nieuwe gewone gebruiker aan te maken -->
 <form method="post" action="{{ url_for('staff_create_user') }}" class="mb-3">
-  <div class="row g-2">
-    <div class="col"><input type="text" name="new_username" class="form-control" placeholder="Gebruikersnaam" required></div>
-    <div class="col"><input type="password" name="new_password" class="form-control" placeholder="Wachtwoord" required></div>
-    <div class="col"><button type="submit" class="btn btn-success">Maak aan</button></div>
+  <div class="row">
+    <div class="col-md-4">
+      <input type="text" name="new_username" class="form-control" placeholder="Nieuwe gebruikersnaam" required>
+    </div>
+    <div class="col-md-4">
+      <input type="password" name="new_password" class="form-control" placeholder="Wachtwoord" required>
+    </div>
+    <div class="col-md-4">
+      <button type="submit" class="btn btn-success">Gebruiker aanmaken</button>
+    </div>
   </div>
 </form>
 
-<table class="table table-bordered">
-  <thead><tr><th>ID</th><th>Naam</th><th>Actief</th></tr></thead>
-  <tbody>
-    {% for user in users %}
+<!-- Overzicht van bestaande gebruikers -->
+<h3>Bestaande gebruikers</h3>
+{% if users and users|length > 0 %}
+<table class="table table-striped">
+  <thead>
     <tr>
-      <td>{{ user.id }}</td>
-      <td>{{ user.username }}</td>
-      <td>{{ user.active }}</td>
+      <th>ID</th>
+      <th>Gebruikersnaam</th>
+      <th>Actief</th>
+      <th>Acties</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.id }}</td>
+      <td>{{ u.username }}</td>
+      <td>{{ 'Ja' if u.active else 'Nee' }}</td>
+      <td>
+        <!-- Reset wachtwoord knop -->
+        <a href="{{ url_for('reset_password', user_id=u.id) }}" class="btn btn-sm btn-warning">Reset wachtwoord</a>
+      </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p>Er zijn nog geen gebruikers.</p>
+{% endif %}
 {% endblock %}
