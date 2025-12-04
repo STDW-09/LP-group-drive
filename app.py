@@ -5,11 +5,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime
 
-# --- Flask setup ---
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "gebruik_een_veilige_sleutel")
 
-# --- Supabase client ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -39,7 +37,7 @@ def get_user_by_username(username):
     res = supabase.table("users").select("*").eq("username", username).single().execute()
     return res.data
 
-# ---------------- LOGIN / LOGOUT --------------------
+# ---------------- LOGIN --------------------
 @app.route("/")
 def home():
     return redirect(url_for("login"))
@@ -98,6 +96,7 @@ def dashboard():
                            used=sum(f["size"] for f in storage_list),
                            limit=MAX_USER_STORAGE)
 
+# ---------------- UPLOAD / DELETE / DOWNLOAD --------------------
 @app.route("/upload", methods=["POST"])
 def upload():
     if not is_logged():
@@ -118,10 +117,8 @@ def upload():
         flash("Niet genoeg opslagruimte", "danger")
         return redirect(url_for("dashboard"))
 
-    # Upload naar storage
     supabase.storage.from_(BUCKET_NAME).upload(f"{username}/{filename}", file)
 
-    # Metadata opslaan in tabel
     supabase.table("files").insert([{
         "username": username,
         "filename": filename,
@@ -140,10 +137,7 @@ def delete_file(filename):
     username = session["username"]
     safe_name = secure_filename(filename)
 
-    # Verwijder uit storage
     supabase.storage.from_(BUCKET_NAME).remove([f"{username}/{safe_name}"])
-
-    # Verwijder metadata uit tabel
     supabase.table("files").delete().eq("username", username).eq("filename", safe_name).execute()
 
     flash("Bestand verwijderd", "success")
@@ -187,10 +181,11 @@ def staff_create_user():
     password = request.form["new_password"]
 
     try:
+        # Staff mag enkel gewone gebruikers maken
         supabase.table("users").insert([{
             "username": username,
             "password_hash": generate_password_hash(password),
-            "is_staff": True,
+            "is_staff": False,
             "active": True
         }]).execute()
         flash("Gebruiker aangemaakt", "success")
@@ -239,7 +234,6 @@ def admin_create_user():
 
 @app.route("/admin/reset/<int:user_id>", methods=["GET", "POST"])
 def admin_reset_password(user_id):
-    # Zowel admin als staff mogen dit
     if not (is_admin() or is_staff()):
         return render_template("not_allowed.html")
 
@@ -267,4 +261,3 @@ def admin_toggle_user(user_id):
     supabase.table("users").update({"active": new_state}).eq("id", user_id).execute()
     flash("Gebruikerstatus aangepast", "success")
     return redirect(url_for("admin_users"))
-
