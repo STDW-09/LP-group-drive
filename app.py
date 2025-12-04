@@ -1,8 +1,8 @@
 import os
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from supabase import create_client
+from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from passlib.hash import pbkdf2_sha256  # <--- passlib import
 
 # --- Flask setup ---
 app = Flask(__name__)
@@ -50,7 +50,7 @@ def login():
         pw = request.form.get("password")
 
         user = get_user_by_username(name)
-        if user and user["active"] and pbkdf2_sha256.verify(pw, user["password_hash"]):
+        if user and user["active"] and check_password_hash(user["password_hash"], pw):
             session["username"] = user["username"]
             session["user_id"] = user["id"]
             session["is_admin"] = bool(user["is_admin"])
@@ -130,7 +130,8 @@ def delete_file(filename):
         return redirect(url_for("login"))
 
     username = session["username"]
-    supabase.storage.from_(BUCKET_NAME).remove([f"{username}/{secure_filename(filename)}"]])
+    file_path = f"{username}/{secure_filename(filename)}"
+    supabase.storage.from_(BUCKET_NAME).remove([file_path])
     flash("Bestand verwijderd", "success")
 
     return redirect(url_for("dashboard"))
@@ -173,7 +174,7 @@ def staff_create_user():
     try:
         supabase.table("users").insert([{
             "username": username,
-            "password_hash": pbkdf2_sha256.hash(pw),
+            "password_hash": generate_password_hash(pw),
             "is_staff": True
         }]).execute()
         flash("Gebruiker aangemaakt", "success")
@@ -212,7 +213,7 @@ def admin_create_user():
     try:
         supabase.table("users").insert([{
             "username": name,
-            "password_hash": pbkdf2_sha256.hash(pw),
+            "password_hash": generate_password_hash(pw),
             "is_staff": is_staff_value
         }]).execute()
         flash("Gebruiker/staff aangemaakt", "success")
@@ -229,7 +230,7 @@ def admin_reset_password(user_id):
     if request.method == "POST":
         pw = request.form["new_password"]
         supabase.table("users").update({
-            "password_hash": pbkdf2_sha256.hash(pw)
+            "password_hash": generate_password_hash(pw)
         }).eq("id", user_id).execute()
         flash("Wachtwoord veranderd", "success")
         return redirect(url_for("admin_users"))
