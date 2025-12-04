@@ -13,8 +13,8 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-BUCKET_NAME = "userfiles"   # maak deze bucket aan in Supabase
-MAX_USER_STORAGE = 100 * 1024 * 1024   # 100 MB
+BUCKET_NAME = "userfiles"
+MAX_USER_STORAGE = 100 * 1024 * 1024  # 100 MB
 
 # ---------------- HELPERS --------------------
 def is_logged():
@@ -27,16 +27,25 @@ def is_staff():
     return session.get("is_staff", False)
 
 def storage_used(username):
-    files = supabase.storage.from_(BUCKET_NAME).list(path=username)
-    return sum(f.get("metadata", {}).get("size", 0) for f in files)
+    try:
+        files = supabase.storage.from_(BUCKET_NAME).list(path=username)
+        return sum(f.get("metadata", {}).get("size", 0) for f in files)
+    except Exception:
+        return 0
 
 def get_user(user_id):
-    res = supabase.table("users").select("*").eq("id", user_id).single().execute()
-    return res.data
+    try:
+        res = supabase.table("users").select("*").eq("id", user_id).single().execute()
+        return res.data
+    except Exception:
+        return None
 
 def get_user_by_username(username):
-    res = supabase.table("users").select("*").eq("username", username).single().execute()
-    return res.data
+    try:
+        res = supabase.table("users").select("*").eq("username", username).single().execute()
+        return res.data
+    except Exception:
+        return None
 
 # ---------------- LOGIN / LOGOUT --------------------
 @app.route("/")
@@ -46,16 +55,23 @@ def home():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        name = request.form.get("username").strip()
-        pw = request.form.get("password")
+        name = request.form.get("username", "").strip()
+        pw = request.form.get("password", "")
 
         user = get_user_by_username(name)
-        if user and user["active"] and check_password_hash(user["password_hash"], pw):
+        if not user:
+            flash("Gebruiker niet gevonden", "danger")
+            return redirect(url_for("login"))
+
+        if not user.get("active", True):
+            flash("Gebruiker is geblokkeerd", "danger")
+            return redirect(url_for("login"))
+
+        if check_password_hash(user["password_hash"], pw):
             session["username"] = user["username"]
             session["user_id"] = user["id"]
-            session["is_admin"] = bool(user["is_admin"])
-            session["is_staff"] = bool(user["is_staff"])
-
+            session["is_admin"] = bool(user.get("is_admin", False))
+            session["is_staff"] = bool(user.get("is_staff", False))
             flash("Succesvol ingelogd", "success")
 
             if is_admin():
@@ -63,9 +79,9 @@ def login():
             if is_staff():
                 return redirect(url_for("staff_panel"))
             return redirect(url_for("dashboard"))
-
-        flash("Foute gegevens", "danger")
-        return redirect(url_for("login"))
+        else:
+            flash("Foute gegevens", "danger")
+            return redirect(url_for("login"))
 
     return render_template("login.html")
 
@@ -116,10 +132,10 @@ def upload():
         flash("Niet genoeg opslagruimte", "danger")
         return redirect(url_for("dashboard"))
 
-    res = supabase.storage.from_(BUCKET_NAME).upload(f"{username}/{filename}", file)
-    if res:
-        flash("Bestand geüpload naar Supabase", "success")
-    else:
+    try:
+        supabase.storage.from_(BUCKET_NAME).upload(f"{username}/{filename}", file)
+        flash("Bestand geüpload", "success")
+    except Exception:
         flash("Upload mislukt", "danger")
 
     return redirect(url_for("dashboard"))
@@ -130,9 +146,11 @@ def delete_file(filename):
         return redirect(url_for("login"))
 
     username = session["username"]
-    file_path = f"{username}/{secure_filename(filename)}"
-    supabase.storage.from_(BUCKET_NAME).remove([file_path])
-    flash("Bestand verwijderd", "success")
+    try:
+        supabase.storage.from_(BUCKET_NAME).remove([f"{username}/{secure_filename(filename)}"])
+        flash("Bestand verwijderd", "success")
+    except Exception:
+        flash("Verwijderen mislukt", "danger")
 
     return redirect(url_for("dashboard"))
 
@@ -142,14 +160,13 @@ def download(filename):
         return redirect(url_for("login"))
 
     username = session["username"]
-    res = supabase.storage.from_(BUCKET_NAME).download(f"{username}/{secure_filename(filename)}")
-
-    if res:
-        return (res, 200, {
+    try:
+        file_data = supabase.storage.from_(BUCKET_NAME).download(f"{username}/{secure_filename(filename)}")
+        return (file_data, 200, {
             "Content-Type": "application/octet-stream",
             "Content-Disposition": f"attachment; filename={filename}"
         })
-    else:
+    except Exception:
         flash("Download mislukt", "danger")
         return redirect(url_for("dashboard"))
 
@@ -178,8 +195,8 @@ def staff_create_user():
             "is_staff": True
         }]).execute()
         flash("Gebruiker aangemaakt", "success")
-    except:
-        flash("Gebruiker bestaat al", "danger")
+    except Exception:
+        flash("Gebruiker bestaat mogelijk al", "danger")
 
     return redirect(url_for("staff_panel"))
 
@@ -207,7 +224,6 @@ def admin_create_user():
     name = request.form["new_username"]
     pw = request.form["new_password"]
     role = request.form["role"]
-
     is_staff_value = True if role == "staff" else False
 
     try:
@@ -217,8 +233,8 @@ def admin_create_user():
             "is_staff": is_staff_value
         }]).execute()
         flash("Gebruiker/staff aangemaakt", "success")
-    except:
-        flash("Gebruiker bestaat al", "danger")
+    except Exception:
+        flash("Gebruiker bestaat mogelijk al", "danger")
 
     return redirect(url_for("admin_users"))
 
@@ -229,10 +245,13 @@ def admin_reset_password(user_id):
 
     if request.method == "POST":
         pw = request.form["new_password"]
-        supabase.table("users").update({
-            "password_hash": generate_password_hash(pw)
-        }).eq("id", user_id).execute()
-        flash("Wachtwoord veranderd", "success")
+        try:
+            supabase.table("users").update({
+                "password_hash": generate_password_hash(pw)
+            }).eq("id", user_id).execute()
+            flash("Wachtwoord veranderd", "success")
+        except Exception:
+            flash("Wachtwoord kon niet veranderd worden", "danger")
         return redirect(url_for("admin_users"))
 
     return render_template("reset_password.html")
@@ -247,9 +266,13 @@ def admin_toggle_user(user_id):
         flash("Gebruiker niet gevonden", "danger")
         return redirect(url_for("admin_users"))
 
-    new_state = not user["active"]
-    supabase.table("users").update({"active": new_state}).eq("id", user_id).execute()
-    flash("Status aangepast", "success")
+    new_state = not user.get("active", True)
+    try:
+        supabase.table("users").update({"active": new_state}).eq("id", user_id).execute()
+        flash("Status aangepast", "success")
+    except Exception:
+        flash("Kon status niet aanpassen", "danger")
+
     return redirect(url_for("admin_users"))
 
 # ------------------- RUN -------------------
