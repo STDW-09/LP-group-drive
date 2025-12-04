@@ -117,8 +117,10 @@ def upload():
         flash("Niet genoeg opslagruimte", "danger")
         return redirect(url_for("dashboard"))
 
-    supabase.storage.from_(BUCKET_NAME).upload(f"{user_id}/{filename}", file)
+    # Upload als bytes
+    supabase.storage.from_(BUCKET_NAME).upload(f"{user_id}/{filename}", file.read())
 
+    # Metadata opslaan
     supabase.table("files").insert([{
         "user_id": user_id,
         "filename": filename,
