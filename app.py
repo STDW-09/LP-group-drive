@@ -233,8 +233,8 @@ def admin_create_user():
 
     return redirect(url_for("admin_users"))
 
-@app.route("/admin/reset/<int:user_id>", methods=["GET", "POST"])
-def admin_reset_password(user_id):
+@app.route("/reset/<int:user_id>", methods=["GET", "POST"])
+def reset_password(user_id):
     if not (is_admin() or is_staff()):
         return render_template("not_allowed.html")
 
@@ -244,7 +244,12 @@ def admin_reset_password(user_id):
             "password_hash": generate_password_hash(password)
         }).eq("id", user_id).execute()
         flash("Wachtwoord veranderd", "success")
-        return redirect(url_for("admin_users"))
+
+        # Admin terug naar admin_users, staff terug naar staff_panel
+        if is_admin():
+            return redirect(url_for("admin_users"))
+        else:
+            return redirect(url_for("staff_panel"))
 
     return render_template("reset_password.html")
 
