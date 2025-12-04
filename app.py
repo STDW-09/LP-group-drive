@@ -14,9 +14,10 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-BUCKET_NAME = "userfiles"   # maak deze bucket aan in Supabase
+BUCKET_NAME = "userfiles"
 DB_PATH = "users.db"
 MAX_USER_STORAGE = 100 * 1024 * 1024   # 100 MB
+
 
 # ---------------- DATABASE --------------------
 
@@ -38,18 +39,22 @@ def init_db():
             active INTEGER DEFAULT 1
         )
     """)
+
     # admin toevoegen indien niet aanwezig
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
         admin_pw = os.environ.get("ADMIN_PASSWORD", "admin")
         c.execute(
-            "INSERT INTO users (username, password_hash, is_admin, is_staff, active) VALUES (?, ?, 1, 0, 1)",
+            "INSERT INTO users (username, password_hash, is_admin, is_staff, active) 
+             VALUES (?, ?, 1, 0, 1)",
             ("admin", generate_password_hash(admin_pw))
         )
+
     conn.commit()
     conn.close()
 
 init_db()
+
 
 # ---------------- HELPERS --------------------
 
@@ -63,8 +68,9 @@ def is_staff():
     return session.get("is_staff", False)
 
 def storage_used(username):
-    files = supabase.storage.from_(BUCKET_NAME).list(username)
+    files = supabase.storage.from_(BUCKET_NAME).list(path=username)
     return sum(f.get("metadata", {}).get("size", 0) for f in files)
+
 
 # ---------------- LOGIN / LOGOUT --------------------
 
@@ -108,6 +114,7 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
 # ---------------- USER DASHBOARD --------------------
 
 @app.route("/dashboard")
@@ -121,13 +128,14 @@ def dashboard():
         return redirect(url_for("staff_panel"))
 
     username = session["username"]
-    files = supabase.storage.from_(BUCKET_NAME).list(username)
+    files = supabase.storage.from_(BUCKET_NAME).list(path=username)
     file_list = [{"name": f["name"], "size": f.get("metadata", {}).get("size", 0)} for f in files]
 
     return render_template("dashboard.html",
                            files=file_list,
                            used=sum(f["size"] for f in file_list),
                            limit=MAX_USER_STORAGE)
+
 
 @app.route("/upload", methods=["POST"])
 def upload():
@@ -147,6 +155,7 @@ def upload():
     file.seek(0, 2)
     file_size = file.tell()
     file.seek(0)
+
     if storage_used(username) + file_size > MAX_USER_STORAGE:
         flash("Niet genoeg opslagruimte", "danger")
         return redirect(url_for("dashboard"))
@@ -159,6 +168,7 @@ def upload():
 
     return redirect(url_for("dashboard"))
 
+
 @app.route("/delete/<filename>", methods=["POST"])
 def delete_file(filename):
     if not is_logged():
@@ -170,6 +180,7 @@ def delete_file(filename):
 
     return redirect(url_for("dashboard"))
 
+
 @app.route("/download/<filename>")
 def download(filename):
     if not is_logged():
@@ -178,14 +189,19 @@ def download(filename):
     username = session["username"]
     res = supabase.storage.from_(BUCKET_NAME).download(f"{username}/{secure_filename(filename)}")
 
-    if res:
-        return (res, 200, {
-            "Content-Type": "application/octet-stream",
-            "Content-Disposition": f"attachment; filename={filename}"
-        })
-    else:
+    if not res:
         flash("Download mislukt", "danger")
         return redirect(url_for("dashboard"))
+
+    return (
+        res,
+        200,
+        {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": f"attachment; filename={filename}",
+        },
+    )
+
 
 # ---------------- STAFF --------------------
 
@@ -201,6 +217,7 @@ def staff_panel():
     conn.close()
 
     return render_template("staff_panel.html", users=users)
+
 
 @app.route("/staff/create", methods=["POST"])
 def staff_create_user():
@@ -224,6 +241,7 @@ def staff_create_user():
 
     return redirect(url_for("staff_panel"))
 
+
 # ---------------- ADMIN --------------------
 
 @app.route("/admin")
@@ -231,6 +249,7 @@ def admin_panel():
     if not is_admin():
         return render_template("not_allowed.html")
     return render_template("admin_panel.html")
+
 
 @app.route("/admin/users")
 def admin_users():
@@ -244,6 +263,7 @@ def admin_users():
     conn.close()
 
     return render_template("admin_users.html", users=users)
+
 
 @app.route("/admin/create", methods=["POST"])
 def admin_create_user():
@@ -259,8 +279,10 @@ def admin_create_user():
     conn = db()
     c = conn.cursor()
     try:
-        c.execute("INSERT INTO users (username, password_hash, is_staff) VALUES (?, ?, ?)",
-                  (name, generate_password_hash(pw), is_staff_value))
+        c.execute(
+            "INSERT INTO users (username, password_hash, is_staff) VALUES (?, ?, ?)",
+            (name, generate_password_hash(pw), is_staff_value)
+        )
         conn.commit()
         flash("Gebruiker/staff aangemaakt", "success")
     except sqlite3.IntegrityError:
@@ -269,6 +291,7 @@ def admin_create_user():
         conn.close()
 
     return redirect(url_for("admin_users"))
+
 
 @app.route("/admin/reset/<int:user_id>", methods=["GET", "POST"])
 def admin_reset_password(user_id):
@@ -288,6 +311,7 @@ def admin_reset_password(user_id):
 
     return render_template("reset_password.html")
 
+
 @app.route("/admin/toggle/<int:user_id>", methods=["POST"])
 def admin_toggle_user(user_id):
     if not is_admin():
@@ -297,4 +321,11 @@ def admin_toggle_user(user_id):
     c = conn.cursor()
     c.execute("SELECT active FROM users WHERE id=?", (user_id,))
     current = c.fetchone()["active"]
-    new_state = 0 if current else 
+
+    new_state = 0 if current else 1
+
+    c.execute("UPDATE users SET active=? WHERE id=?", (new_state, user_id))
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for("admin_users"))
