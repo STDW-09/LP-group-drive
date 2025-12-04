@@ -264,4 +264,7 @@ def admin_toggle_user(user_id):
         return redirect(url_for("admin_users"))
 
     new_state = not user.get("active", True)
-    supabase.table("users").update({"active": new_state}).eq("id", user_id
+    supabase.table("users").update({"active": new_state}).eq("id", user_id).execute()
+    flash("Gebruikerstatus aangepast", "success")
+    return redirect(url_for("admin_users"))
+
