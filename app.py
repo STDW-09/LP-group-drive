@@ -75,18 +75,15 @@ def logout():
     return redirect(url_for("login"))
 
 # ---------------- DASHBOARD --------------------
-@app.route("/dashboard")
 def dashboard():
     if not is_logged():
         return redirect(url_for("login"))
 
     username = session["username"]
 
-    # Bestanden uit storage
     storage_files = supabase.storage.from_(BUCKET_NAME).list(path=username)
     storage_list = [{"name": f["name"], "size": f.get("metadata", {}).get("size", 0)} for f in storage_files]
 
-    # Metadata uit tabel (voorkom NoneType error)
     res = supabase.table("files").select("*").eq("username", username).execute()
     db_files = res.data or []
 
