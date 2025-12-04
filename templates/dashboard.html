@@ -13,7 +13,7 @@
 
 <!-- Bestanden uit storage bucket -->
 <h3>Bestanden in opslag</h3>
-{% if files %}
+{% if files and files|length > 0 %}
 <table class="table table-striped">
   <thead>
     <tr><th>Bestand</th><th>Grootte</th><th>Acties</th></tr>
@@ -21,8 +21,8 @@
   <tbody>
     {% for file in files %}
     <tr>
-      <td>{{ file.name }}</td>
-      <td>{{ file.size|filesizeformat }}</td>
+      <td>{{ file.name or 'Onbekend' }}</td>
+      <td>{{ file.size|default(0)|filesizeformat }}</td>
       <td>
         <a href="{{ url_for('download', filename=file.name) }}" class="btn btn-sm btn-primary">Download</a>
         <form method="post" action="{{ url_for('delete_file', filename=file.name) }}" style="display:inline;">
@@ -39,7 +39,7 @@
 
 <!-- Metadata uit de files-tabel -->
 <h3>Metadata uit database</h3>
-{% if db_files %}
+{% if db_files and db_files|length > 0 %}
 <table class="table table-bordered">
   <thead>
     <tr><th>Bestand</th><th>Grootte</th><th>Datum</th></tr>
@@ -47,9 +47,9 @@
   <tbody>
     {% for f in db_files %}
     <tr>
-      <td>{{ f.filename }}</td>
-      <td>{{ f.size|filesizeformat }}</td>
-      <td>{{ f.created_at }}</td>
+      <td>{{ f.filename or 'Onbekend' }}</td>
+      <td>{{ f.size|default(0)|filesizeformat }}</td>
+      <td>{{ f.created_at or '' }}</td>
     </tr>
     {% endfor %}
   </tbody>
