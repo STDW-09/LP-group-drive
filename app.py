@@ -206,8 +206,12 @@ def admin_panel():
 def admin_users():
     if not is_admin():
         return render_template("not_allowed.html")
-    res = supabase.table("users").select("*").execute()
-    users = res.data or []
+    try:
+        res = supabase.table("users").select("*").execute()
+        users = res.data or []
+    except Exception as e:
+        flash(f"Kon gebruikers niet laden: {e}", "danger")
+        users = []
     return render_template("admin_users.html", users=users)
 
 @app.route("/admin/create", methods=["POST"])
