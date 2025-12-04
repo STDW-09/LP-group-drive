@@ -1,8 +1,9 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, Response
 from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from datetime import datetime
 
 # --- Flask setup ---
 app = Flask(__name__)
@@ -46,11 +47,11 @@ def home():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username").strip()
-        password = request.form.get("password")
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
 
         user = get_user_by_username(username)
-        if user and user["active"] and check_password_hash(user["password_hash"], password):
+        if user and user.get("active", True) and check_password_hash(user["password_hash"], password):
             session["username"] = user["username"]
             session["user_id"] = user["id"]
             session["is_admin"] = bool(user.get("is_admin", False))
@@ -80,18 +81,20 @@ def logout():
 def dashboard():
     if not is_logged():
         return redirect(url_for("login"))
-    if is_admin():
-        return redirect(url_for("admin_panel"))
-    if is_staff():
-        return redirect(url_for("staff_panel"))
 
     username = session["username"]
-    files = supabase.storage.from_(BUCKET_NAME).list(path=username)
-    file_list = [{"name": f["name"], "size": f.get("metadata", {}).get("size", 0)} for f in files]
+
+    # Bestanden uit storage
+    storage_files = supabase.storage.from_(BUCKET_NAME).list(path=username)
+    storage_list = [{"name": f["name"], "size": f.get("metadata", {}).get("size", 0)} for f in storage_files]
+
+    # Metadata uit tabel
+    db_files = supabase.table("files").select("*").eq("username", username).execute().data
 
     return render_template("dashboard.html",
-                           files=file_list,
-                           used=sum(f["size"] for f in file_list),
+                           files=storage_list,
+                           db_files=db_files,
+                           used=sum(f["size"] for f in storage_list),
                            limit=MAX_USER_STORAGE)
 
 @app.route("/upload", methods=["POST"])
@@ -109,11 +112,22 @@ def upload():
     file.seek(0, 2)
     file_size = file.tell()
     file.seek(0)
+
     if storage_used(username) + file_size > MAX_USER_STORAGE:
         flash("Niet genoeg opslagruimte", "danger")
         return redirect(url_for("dashboard"))
 
+    # Upload naar storage
     supabase.storage.from_(BUCKET_NAME).upload(f"{username}/{filename}", file)
+
+    # Metadata opslaan in tabel
+    supabase.table("files").insert([{
+        "username": username,
+        "filename": filename,
+        "size": file_size,
+        "created_at": datetime.utcnow().isoformat()
+    }]).execute()
+
     flash("Bestand geüpload", "success")
     return redirect(url_for("dashboard"))
 
@@ -123,7 +137,14 @@ def delete_file(filename):
         return redirect(url_for("login"))
 
     username = session["username"]
-    supabase.storage.from_(BUCKET_NAME).remove([f"{username}/{secure_filename(filename)}"])
+    safe_name = secure_filename(filename)
+
+    # Verwijder uit storage
+    supabase.storage.from_(BUCKET_NAME).remove([f"{username}/{safe_name}"])
+
+    # Verwijder metadata uit tabel
+    supabase.table("files").delete().eq("username", username).eq("filename", safe_name).execute()
+
     flash("Bestand verwijderd", "success")
     return redirect(url_for("dashboard"))
 
@@ -133,12 +154,15 @@ def download(filename):
         return redirect(url_for("login"))
 
     username = session["username"]
-    data = supabase.storage.from_(BUCKET_NAME).download(f"{username}/{secure_filename(filename)}")
+    safe_name = secure_filename(filename)
+    data = supabase.storage.from_(BUCKET_NAME).download(f"{username}/{safe_name}")
+
     if data:
-        return (data, 200, {
-            "Content-Type": "application/octet-stream",
-            "Content-Disposition": f"attachment; filename={filename}"
-        })
+        return Response(
+            data,
+            mimetype="application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename={safe_name}"}
+        )
     else:
         flash("Download mislukt", "danger")
         return redirect(url_for("dashboard"))
@@ -165,11 +189,12 @@ def staff_create_user():
         supabase.table("users").insert([{
             "username": username,
             "password_hash": generate_password_hash(password),
-            "is_staff": True
+            "is_staff": True,
+            "active": True
         }]).execute()
         flash("Gebruiker aangemaakt", "success")
-    except:
-        flash("Gebruiker bestaat al", "danger")
+    except Exception as e:
+        flash(f"Fout bij aanmaken gebruiker: {e}", "danger")
 
     return redirect(url_for("staff_panel"))
 
@@ -202,11 +227,12 @@ def admin_create_user():
         supabase.table("users").insert([{
             "username": username,
             "password_hash": generate_password_hash(password),
-            "is_staff": is_staff_value
+            "is_staff": is_staff_value,
+            "active": True
         }]).execute()
         flash("Gebruiker/staff aangemaakt", "success")
-    except:
-        flash("Gebruiker bestaat al", "danger")
+    except Exception as e:
+        flash(f"Fout bij aanmaken gebruiker: {e}", "danger")
 
     return redirect(url_for("admin_users"))
 
@@ -237,9 +263,4 @@ def admin_toggle_user(user_id):
 
     new_state = not user.get("active", True)
     supabase.table("users").update({"active": new_state}).eq("id", user_id).execute()
-    flash("Status aangepast", "success")
-    return redirect(url_for("admin_users"))
-
-# ------------------- RUN -------------------
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    flash
