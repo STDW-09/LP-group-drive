@@ -1,16 +1,23 @@
 {% extends "layout.html" %}
 {% block title %}Dashboard{% endblock %}
+
 {% block content %}
 <h2>Mijn bestanden</h2>
 <p>Gebruikte opslag: {{ used|filesizeformat }} / {{ limit|filesizeformat }}</p>
 
+<!-- Upload formulier -->
 <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" class="mb-3">
   <input type="file" name="file" class="form-control mb-2" required>
   <button type="submit" class="btn btn-success">Upload</button>
 </form>
 
+<!-- Bestanden uit storage bucket -->
+<h3>Bestanden in opslag</h3>
+{% if files %}
 <table class="table table-striped">
-  <thead><tr><th>Bestand</th><th>Grootte</th><th>Acties</th></tr></thead>
+  <thead>
+    <tr><th>Bestand</th><th>Grootte</th><th>Acties</th></tr>
+  </thead>
   <tbody>
     {% for file in files %}
     <tr>
@@ -26,4 +33,28 @@
     {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p>Je hebt nog geen bestanden geüpload.</p>
+{% endif %}
+
+<!-- Metadata uit de files-tabel -->
+<h3>Metadata uit database</h3>
+{% if db_files %}
+<table class="table table-bordered">
+  <thead>
+    <tr><th>Bestand</th><th>Grootte</th><th>Datum</th></tr>
+  </thead>
+  <tbody>
+    {% for f in db_files %}
+    <tr>
+      <td>{{ f.filename }}</td>
+      <td>{{ f.size|filesizeformat }}</td>
+      <td>{{ f.created_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Er is nog geen metadata geregistreerd voor je bestanden.</p>
+{% endif %}
 {% endblock %}
